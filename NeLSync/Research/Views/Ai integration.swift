@@ -19,7 +19,7 @@ struct AIRecommendationEngine {
             case insufficient
         }
     private struct DeepSeekConfig {
-        static let apiKey = "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"
+        static let apiKey = "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"
         static let endpoint = "https://openrouter.ai/api/v1/chat/completions"
     }
     
