@@ -1,0 +1,6 @@
+framework module Pods_Research_ResearchUITests {
+  umbrella header "Pods-Research-ResearchUITests-umbrella.h"
+
+  export *
+  module * { export * }
+}

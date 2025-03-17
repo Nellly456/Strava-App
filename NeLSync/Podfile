@@ -1,0 +1,12 @@
+platform :ios, '17.2'
+
+# Add the source repository for Supabase
+source 'https://github.com/CocoaPods/Specs.git'
+
+target 'Research' do
+  # Use the main branch instead of master
+  pod 'Supabase', :git => 'https://github.com/supabase/supabase-swift.git', :branch => 'main'
+  
+  # Include OAuthSwift if you still need it
+  pod 'OAuthSwift'
+end
