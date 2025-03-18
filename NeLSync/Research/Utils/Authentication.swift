@@ -191,10 +191,12 @@ class AuthenticationManager: NSObject, ObservableObject, ASWebAuthenticationPres
             let (data, _) = try await URLSession.shared.data(for: request)
             
             if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-               let token = json["access_token"] as? String {
+               let token = json["access_token"] as? String,
+               let freshToken = json["refresh_token"] as? String  {
                 // Update authentication state on the main actor
                 await MainActor.run {
                     self.accessToken = token
+                    self.refreshToken = freshToken
                     print(token)
                     self.isAuthenticated = true
                     print("Set access token and authenticated state") // Debug log
@@ -202,7 +204,8 @@ class AuthenticationManager: NSObject, ObservableObject, ASWebAuthenticationPres
                 // Save the token for future sessions
                 UserDefaults.standard.set(token, forKey: "accessToken")
                 print("Saved token to UserDefaults") // Debug log
-                
+                UserDefaults.standard.set(freshToken, forKey: "refreshToken")
+                print("Saved token to UserDefaults")
                 // Fetch user details with the new token
                 await fetchUserDetails(token: token)
             }
@@ -420,12 +423,13 @@ class AuthenticationManager: NSObject, ObservableObject, ASWebAuthenticationPres
     
     
     func refreshStravaToken() async -> Bool {
-        guard let code = UserDefaults.standard.string(forKey: "refresh") else {
-            print("No authorization code found in UserDefaults")
-            return false
-        }
+        guard let token = UserDefaults.standard.string(forKey: "refreshToken") else {
+                print("No authorization code found in UserDefaults")
+                return false
+            }
         
         guard let url = URL(string: "https://www.strava.com/oauth/token") else {
+            print("Missing configuration values")
             return false
         }
         
@@ -436,8 +440,8 @@ class AuthenticationManager: NSObject, ObservableObject, ASWebAuthenticationPres
         let parameters: [String: Any] = [
             "client_id": clientID,
             "client_secret": clientSecret,
-            "code": code,
-            "grant_type": "authorization_code"
+            "grant_type": "refresh_token",
+            "refresh_token": token
         ]
         
         do {
@@ -453,12 +457,11 @@ class AuthenticationManager: NSObject, ObservableObject, ASWebAuthenticationPres
             if let tokenData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let newAccessToken = tokenData["access_token"] as? String,
                let newRefreshToken = tokenData["refresh_token"] as? String {
-                
+                print("successful")
                 // Update tokens
                 await MainActor.run {
-                    self.accessToken = newAccessToken
-                    self.refreshToken = newRefreshToken
-                    // Save these tokens to your persistent storage
+                    UserDefaults.standard.set(newAccessToken, forKey: "accessToken")
+                    UserDefaults.standard.set(newRefreshToken, forKey: "refreshToken")
                 }
                 return true
             }
@@ -468,7 +471,6 @@ class AuthenticationManager: NSObject, ObservableObject, ASWebAuthenticationPres
         
         return false
     }
-    
     /**
      *
      *
@@ -477,84 +479,56 @@ class AuthenticationManager: NSObject, ObservableObject, ASWebAuthenticationPres
      * Retrieves the user's activity data and updates the local state
      */
     func fetchActivitiesFromStrava() async {
-       
-        
-        guard let token = accessToken else {
-            print("No access token available")
+        guard let token = UserDefaults.standard.string(forKey: "accessToken")else{
+                print("No access token available")
             return
         }
-        
         guard let url = URL(string: "https://www.strava.com/api/v3/athlete/activities") else {
             print("Invalid URL")
             return
         }
         
-        // Prepare the activities request
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 30
         request.cachePolicy = .reloadIgnoringLocalCacheData
         
         do {
-            // Send the request and process the response
             let (data, response) = try await URLSession.shared.data(for: request)
             
-            // Check for valid HTTP response
             guard let httpResponse = response as? HTTPURLResponse else {
                 print("Invalid response")
                 return
             }
             
-            // Check status code
+            if httpResponse.statusCode == 401 {
+                print("Token expired, attempting to refresh...")
+                let refreshed = await refreshStravaToken()
+                if refreshed {
+                    await fetchActivitiesFromStrava()  // Retry with new token
+                } else {
+                    print("Token refresh failed, user needs to re-authenticate")
+                }
+                return
+            }
+            
             guard 200...299 ~= httpResponse.statusCode else {
                 print("Error: HTTP status code \(httpResponse.statusCode)")
                 return
             }
             
-            // Parse JSON data
-            do {
-                if let activitiesData = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                    print("Received \(activitiesData.count) activities from Strava")
-                    
-                    // Update the activities property on the main actor
-                    await MainActor.run {
-                        self.activities = activitiesData
-                    }
-                    
-                    // Save the fetched activities to Supabase
-                    await saveActivitiesToSupabase(activities: activitiesData)
-                } else {
-                    print("Invalid JSON structure")
+            if let activitiesData = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                print("Received \(activitiesData.count) activities from Strava")
+                await MainActor.run {
+                    self.activities = activitiesData
                 }
-            } catch {
-                print("JSON parsing error: \(error)")
+                await saveActivitiesToSupabase(activities: activitiesData)
+            } else {
+                print("Invalid JSON structure")
             }
-        } 
-        // In your fetch function, modify the catch block:
-        catch {
-            if let nsError = error as? NSError {
-                // Check if error is a URLError with userInfo containing response
-                if let urlError = nsError as? URLError {
-                    // Here, we cannot directly access response, but can check for 401 via error code
-                    if urlError.code == .userAuthenticationRequired {
-                        print("Token expired, attempting to refresh...")
-                        let refreshed = await refreshStravaToken()
-                        if refreshed {
-                            // Try fetching activities again with new token
-                            await fetchActivitiesFromStrava()
-                        } else {
-                            print("Token refresh failed, user needs to re-authenticate")
-                        }
-                    } else {
-                        print("Error fetching activities from Strava: \(urlError.localizedDescription)")
-                    }
-                } else {
-                    print("Unexpected error: \(error)")
-                }
-            }
+        } catch {
+            print("Unexpected error: \(error)")
         }
-
-
     }
 
     /**
