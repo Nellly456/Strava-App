@@ -19,8 +19,9 @@ struct AIRecommendationEngine {
             case insufficient
         }
     private struct DeepSeekConfig {
-        static let apiKey = "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"
-        static let endpoint = "https://openrouter.ai/api/v1/chat/completions"
+        static let apiKey = "AIzaSyAhTqr1u7OOcv0L0Y6IwV6lY0ZF2OHDw5s"
+        
+        static let endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
     }
     
     // Function to get AI-powered advice from DeepSeek
@@ -48,7 +49,7 @@ struct AIRecommendationEngine {
         
         // Structure the request payload
         let requestBody: [String: Any] = [
-            "model": "deepseek/deepseek-chat:free",
+            "model": "gemini-2.0-flash",
             "messages": [
                 ["role": "system", "content": "You are an expert fitness coach specializing in personalized training recommendations."],
                 ["role": "user", "content": prompt]
