@@ -1,3 +1,15 @@
+//https://developers.strava.com/docs/reference/#api-Athletes
+//https://developers.strava.com/playground/
+//https://supabase.com/docs/reference/swift/start
+//https://developer.apple.com/documentation/authenticationservices/aswebauthenticationsession
+//https://developer.apple.com/documentation/authenticationservices/authenticating-a-user-through-a-web-service
+//https://stackoverflow.com/questions/60145310/using-aswebauthentication-in-swiftui
+
+//https://github.com/auth0/Auth0.swift/blob/master/Auth0/WebAuth.swift
+
+
+
+
 import Foundation
 import Network
 import AuthenticationServices
