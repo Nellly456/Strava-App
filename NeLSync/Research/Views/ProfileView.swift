@@ -1,3 +1,6 @@
+//https://supabase.com/docs/reference/swift/start
+//https://developer.apple.com/documentation/swiftui/
+
 import SwiftUI
 
 /// Main view for displaying and editing user profile information
