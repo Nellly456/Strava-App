@@ -1,3 +1,9 @@
+//https://developer.apple.com/documentation/charts
+//https://developer.apple.com/documentation/charts/creating-a-chart-using-swift-charts
+//https://blorenzop.medium.com/swiftui-charts-b6fa4aca46db
+//https://developer.apple.com/documentation/swiftui/
+
+
 import SwiftUI
 import Charts
 
@@ -33,17 +39,86 @@ struct InteractiveChartSection<Content: View>: View {
     let onTap: () -> Void
     let content: () -> Content
     @State private var isPressed = false
+    @State private var showingRecommendation = false
+    @State private var aiRecommendation: String?
+    @State private var isLoadingRecommendation = false
+    var getRecommendation: (() async -> String)? = nil
 
     var body: some View {
         VStack(alignment: .leading) {
             if !title.isEmpty {
-                Text(title)
-                    .font(.headline)
-                    .padding(.bottom, 4)
+                HStack {
+                    Text(title)
+                        .font(.headline)
+                        .padding(.bottom, 4)
+                    
+                    Spacer()
+                    
+                    // AI Recommendation button
+                    if getRecommendation != nil {
+                        Button(action: {
+                            loadRecommendation()
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                    .font(.caption)
+                                Text("AI Tips")
+                                    .font(.caption)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color.blue.opacity(0.2))
+                            )
+                        }
+                        .disabled(isLoadingRecommendation)
+                    }
+                }
             }
+            
+            // AI Recommendation display
+            if isLoadingRecommendation {
+                HStack {
+                    Spacer()
+                    ProgressView("Loading AI recommendation...")
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+            } else if showingRecommendation, let recommendation = aiRecommendation {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "sparkles")
+                            .foregroundColor(.blue)
+                        Text("AI Recommendation")
+                            .font(.subheadline.bold())
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            showingRecommendation = false
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    
+                    Text(recommendation)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.blue.opacity(0.1))
+                )
+                .padding(.bottom, 8)
+            }
+            
             content()
                 .frame(height: 250)
                 .padding()
+            
             Text(subtitle)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
@@ -66,10 +141,23 @@ struct InteractiveChartSection<Content: View>: View {
             }
         }
     }
+    
+    private func loadRecommendation() {
+        guard let getRecommendation = getRecommendation, !isLoadingRecommendation else { return }
+        
+        isLoadingRecommendation = true
+        
+        Task {
+            let recommendation = await getRecommendation()
+            
+            await MainActor.run {
+                self.aiRecommendation = recommendation
+                self.showingRecommendation = true
+                self.isLoadingRecommendation = false
+            }
+        }
+    }
 }
-
-// Recommendation card component
-
 
 // Detail view for expanded chart information
 struct DetailView: View {
@@ -107,13 +195,8 @@ struct DashboardView: View {
                 headerSection
                 timeRangePicker
                 chartsSection
-               
-                
-                // Note: ElevationDistanceHeatmapChart was referenced in the original code
-                // but not implemented. You'll need to add this component.
             }
             .padding()
-            
         }
         .background(backgroundColor)
         .edgesIgnoringSafeArea(.all)
@@ -162,15 +245,11 @@ struct DashboardView: View {
     
     private var chartsSection: some View {
         VStack(spacing: 20) {
-            AIEnhancedRecommendationCard(viewModel: viewModel)
-                .padding()
+          
             
             // Performance Trend Analysis Chart
             VStack(alignment: .leading) {
                 HStack {
-                    Text("Performance Trend Analysis")
-                        .font(.headline)
-                        .padding(.bottom, 4)
                     Spacer()
                     Picker("Trend Mode", selection: $viewModel.trendDisplayMode) {
                         ForEach(TrendDisplayMode.allCases, id: \.self) { mode in
@@ -182,91 +261,97 @@ struct DashboardView: View {
                 }
                 
                 InteractiveChartSection(
+                    title: "Performance Trend Analysis",
                     subtitle: getTrendSubtitle(),
                     onTap: {
                         viewModel.selectedChart = "Performance Trend"
                         viewModel.showingDetail = true
-                    }
-                ) {
-                    Chart {
-                        switch viewModel.trendDisplayMode {
-                        case .speed:
-                            ForEach(viewModel.filteredTrendData()) { data in
-                                AreaMark(
-                                    x: .value("Date", data.timestamp),
-                                    y: .value("Speed", data.speedValue)
-                                )
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [.blue.opacity(0.6), .blue.opacity(0.2)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
+                    },
+                    content: {
+                        Chart {
+                            switch viewModel.trendDisplayMode {
+                            case .speed:
+                                ForEach(viewModel.filteredTrendData()) { data in
+                                    AreaMark(
+                                        x: .value("Date", data.timestamp),
+                                        y: .value("Speed", data.speedValue)
                                     )
-                                )
-                                .interpolationMethod(.catmullRom)
-                            }
-                            
-                            ForEach(viewModel.filteredTrendData()) { data in
-                                LineMark(
-                                    x: .value("Date", data.timestamp),
-                                    y: .value("Speed", data.speedValue)
-                                )
-                                .foregroundStyle(Color.blue)
-                                .lineStyle(StrokeStyle(lineWidth: 2.5))
-                                .interpolationMethod(.catmullRom)
-                            }
-                            
-                            ForEach(viewModel.filteredTrendData()) { data in
-                                PointMark(
-                                    x: .value("Date", data.timestamp),
-                                    y: .value("Speed", data.speedValue)
-                                )
-                                .foregroundStyle(Color.blue)
-                            }
-                        case .distance:
-                            ForEach(viewModel.filteredTrendData()) { data in
-                                AreaMark(
-                                    x: .value("Date", data.timestamp),
-                                    y: .value("Distance", data.distanceValue)
-                                )
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [.green.opacity(0.6), .green.opacity(0.2)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [.blue.opacity(0.6), .blue.opacity(0.2)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
                                     )
-                                )
-                                .interpolationMethod(.catmullRom)
-                            }
-                            
-                            ForEach(viewModel.filteredTrendData()) { data in
-                                LineMark(
-                                    x: .value("Date", data.timestamp),
-                                    y: .value("Distance", data.distanceValue)
-                                )
-                                .foregroundStyle(Color.green)
-                                .lineStyle(StrokeStyle(lineWidth: 2.5))
-                                .interpolationMethod(.catmullRom)
-                            }
-                            
-                            ForEach(viewModel.filteredTrendData()) { data in
-                                PointMark(
-                                    x: .value("Date", data.timestamp),
-                                    y: .value("Distance", data.distanceValue)
-                                )
-                                .foregroundStyle(Color.green)
+                                    .interpolationMethod(.catmullRom)
+                                }
+                                
+                                ForEach(viewModel.filteredTrendData()) { data in
+                                    LineMark(
+                                        x: .value("Date", data.timestamp),
+                                        y: .value("Speed", data.speedValue)
+                                    )
+                                    .foregroundStyle(Color.blue)
+                                    .lineStyle(StrokeStyle(lineWidth: 2.5))
+                                    .interpolationMethod(.catmullRom)
+                                }
+                                
+                                ForEach(viewModel.filteredTrendData()) { data in
+                                    PointMark(
+                                        x: .value("Date", data.timestamp),
+                                        y: .value("Speed", data.speedValue)
+                                    )
+                                    .foregroundStyle(Color.blue)
+                                }
+                            case .distance:
+                                ForEach(viewModel.filteredTrendData()) { data in
+                                    AreaMark(
+                                        x: .value("Date", data.timestamp),
+                                        y: .value("Distance", data.distanceValue)
+                                    )
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [.green.opacity(0.6), .green.opacity(0.2)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                                    .interpolationMethod(.catmullRom)
+                                }
+                                
+                                ForEach(viewModel.filteredTrendData()) { data in
+                                    LineMark(
+                                        x: .value("Date", data.timestamp),
+                                        y: .value("Distance", data.distanceValue)
+                                    )
+                                    .foregroundStyle(Color.green)
+                                    .lineStyle(StrokeStyle(lineWidth: 2.5))
+                                    .interpolationMethod(.catmullRom)
+                                }
+                                
+                                ForEach(viewModel.filteredTrendData()) { data in
+                                    PointMark(
+                                        x: .value("Date", data.timestamp),
+                                        y: .value("Distance", data.distanceValue)
+                                    )
+                                    .foregroundStyle(Color.green)
+                                }
                             }
                         }
-                    }
-                    .chartYAxis { AxisMarks(position: .leading) }
-                    .chartXAxis {
-                        AxisMarks(values: .stride(by: viewModel.getXAxisStride(), count: 5)) { value in
-                            if let date = value.as(Date.self) {
-                                AxisValueLabel { Text(date, format: viewModel.getDateFormat()) }
+                        .chartYAxis { AxisMarks(position: .leading) }
+                        .chartXAxis {
+                            AxisMarks(values: .stride(by: viewModel.getXAxisStride(), count: 4)) { value in
+                                if let date = value.as(Date.self) {
+                                    AxisValueLabel { Text(date, format: viewModel.getDateFormat()) }
+                                }
                             }
                         }
+                        .chartYAxisLabel(viewModel.trendDisplayMode == .speed ? "Speed (m/s)" : "Distance (m)")
+                        .chartXAxisLabel("Date")
+                    }, getRecommendation: {
+                        await viewModel.getAIEnhancedRecommendation().detailedAdvice
                     }
-                }
+                )
             }
             .padding()
             .background(
@@ -276,68 +361,61 @@ struct DashboardView: View {
             )
             barChart
             pieChart
-            // Performance Change (Speed) Chart
             InteractiveChartSection(
                 title: "Run Distance vs. Pace Scatter Plot",
                 subtitle: viewModel.getTimeRangeDescription(),
                 onTap: {
                     viewModel.selectedChart = "Performance Change - Speed"
                     viewModel.showingDetail = true
-                }
-            ) {
-                Chart {
-                    ForEach(viewModel.filteredSpeedData()) { data in
-                        // Scatter plot points
-                        PointMark(
-                            x: .value("Date", data.distance),
-                            y: .value("Speed", data.value)
-                        )
-                        .foregroundStyle(Color.blue)
-                        .symbolSize(100)
+                },
+                content: {
+                    Chart {
+                        ForEach(viewModel.filteredSpeedData()) { data in
+                            PointMark(
+                                x: .value("Date", data.distance),
+                                y: .value("Speed", data.value)
+                            )
+                            .foregroundStyle(Color.blue)
+                            .symbolSize(100)
+                        }
+                        
+                        if viewModel.filteredSpeedData().count > 1 {
+                            let trendlineData = viewModel.filteredSpeedData()
+                            LineMark(
+                                x: .value("Date", trendlineData.first?.distance ?? 0),
+                                y: .value("Speed", trendlineData.first?.value ?? 0)
+                            )
+                            LineMark(
+                                x: .value("Date", trendlineData.last?.distance ?? 0),
+                                y: .value("Speed", trendlineData.last?.value ?? 0)
+                            )
+                            .foregroundStyle(Color.red.opacity(0.7))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+                        }
                     }
-                    
-                    // Optional: Add trend line if you have more than one data point
-                    if viewModel.filteredSpeedData().count > 1 {
-                        let trendlineData = viewModel.filteredSpeedData()
-                        LineMark(
-                            x: .value("Date", trendlineData.first?.distance ?? 0),
-                            y: .value("Speed", trendlineData.first?.value ?? 0)
-                        )
-                        LineMark(
-                            x: .value("Date", trendlineData.last?.distance ?? 0),
-                            y: .value("Speed", trendlineData.last?.value ?? 0)
-                        )
-                        .foregroundStyle(Color.red.opacity(0.7))
-                        .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+                    .chartYAxis {
+                        AxisMarks(position: .leading)
                     }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading)
-                }
-                // Use a consistent axis type that matches your data type
-                .chartXAxis {
-                    // Using automatic axis marks instead of custom stride
-                    AxisMarks { value in
-                        AxisValueLabel {
-                            // Determine the right format based on your data type
-                            if let distance = value.as(Double.self) {
-                                Text(String(format: "%.1f", distance))
-                            } else if let distance = value.as(Int.self) {
-                                Text("\(distance)")
-                            } else if let date = value.as(Date.self) {
-                                Text(date, format: .dateTime.day().month())
+                    .chartXAxis {
+                        AxisMarks { value in
+                            AxisValueLabel {
+                                if let distance = value.as(Double.self) {
+                                    Text(String(format: "%.1f", distance))
+                                } else if let distance = value.as(Int.self) {
+                                    Text("\(distance)")
+                                } else if let date = value.as(Date.self) {
+                                    Text(date, format: .dateTime.day().month())
+                                }
                             }
                         }
                     }
+                    .chartYAxisLabel("Pace (m/s)")
+                    .chartXAxisLabel("Distance (m)")
+                }, getRecommendation: {
+                    await viewModel.getSpeedRecommendation().detailedAdvice
                 }
-            }
-            // Note: There was another Performance Change (Distance) Chart in original code
-            // but it appeared to be incomplete in the provided code
-            
-            
+            )
             heatmapChart
-          
-            
         }
     }
     
@@ -348,78 +426,70 @@ struct DashboardView: View {
         }
     }
     
-    
     var barChart: some View {
-        
         InteractiveChartSection(
             title: "Performance Change (Speed)",
             subtitle: viewModel.getTimeRangeDescription(),
             onTap: {
                 viewModel.selectedChart = "Performance Change - Speed"
                 viewModel.showingDetail = true
-            }
-        ) {
-            Chart {
-                ForEach(viewModel.filteredElevationData()) { data in
-                    BarMark(
-                        x: .value("Date", data.timestamp),
-                        y: .value("Speed", data.value)
-                    )
-                    .foregroundStyle(Color.blue.gradient)
-                    .cornerRadius(4)
-                }
-                
-                // Fixed average line calculation
-                let data = viewModel.filteredElevationData()
-                if !data.isEmpty {
-                    let avgValue = data.map({ $0.value }).reduce(0, +) / Double(data.count)
-                    RuleMark(
-                        y: .value("Average", avgValue)
-                    )
-                    .foregroundStyle(.red)
-                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
-                    .annotation(position: .trailing) {
-                        Text("Avg")
-                            .font(.caption)
-                            .foregroundColor(.red)
+            },
+            content: {
+                Chart {
+                    ForEach(viewModel.filteredElevationData()) { data in
+                        BarMark(
+                            x: .value("Date", data.timestamp),
+                            y: .value("Speed", data.value)
+                        )
+                        .foregroundStyle(Color.blue.gradient)
+                        .cornerRadius(4)
+                    }
+                    
+                    let data = viewModel.filteredElevationData()
+                    if !data.isEmpty {
+                        let avgValue = data.map({ $0.value }).reduce(0, +) / Double(data.count)
+                        RuleMark(
+                            y: .value("Average", avgValue)
+                        )
+                        .foregroundStyle(.red)
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+                        .annotation(position: .trailing) {
+                            Text("Avg")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
                     }
                 }
-            }
-            .chartYAxis {
-                AxisMarks(position: .leading)
-            }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: viewModel.getXAxisStride(), count: 5)) { value in
-                    if let date = value.as(Date.self) {
-                        AxisValueLabel { Text(date, format: viewModel.getDateFormat()) }
+                .chartYAxis {
+                    AxisMarks(position: .leading)
+                }
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: viewModel.getXAxisStride(), count: 4)) { value in
+                        if let date = value.as(Date.self) {
+                            AxisValueLabel { Text(date, format: viewModel.getDateFormat()) }
+                        }
                     }
                 }
+                .chartYAxisLabel("Speed (m/s)")
+                .chartXAxisLabel("Date")
+                .frame(height: 200)
+            }, getRecommendation: {
+                await viewModel.getSpeedRecommendation().detailedAdvice
             }
-            .frame(height: 200)
-        }
+        )
     }
     
     var pieChart: some View {
-        // Get filtered run data
         let runData = viewModel.filteredRunData()
-        
-        // Create categories based on pace/speed or other metrics
-        // For example, categorizing runs by pace brackets
         let fastRuns = runData.filter { $0.value > 12.0 }.count
         let moderateRuns = runData.filter { $0.value >= 8.0 && $0.value <= 12.0 }.count
         let slowRuns = runData.filter { $0.value < 8.0 }.count
-        
-        // Create pie data
         let pieData = [
             (label: "Fast Pace", value: Double(fastRuns)),
             (label: "Moderate Pace", value: Double(moderateRuns)),
             (label: "Slow Pace", value: Double(slowRuns))
         ]
-        
-        // Calculate total for percentages
         let total = pieData.map { $0.value }.reduce(0, +)
-        
-        // Convert to percentage values
         let percentageData = pieData.map { item -> (label: String, value: Double) in
             let percentage = total > 0 ? (item.value / total * 100.0) : 0
             return (label: item.label, value: percentage)
@@ -431,30 +501,33 @@ struct DashboardView: View {
             onTap: {
                 viewModel.selectedChart = "Run Pace Distribution"
                 viewModel.showingDetail = true
-            }
-        ) {
-            Chart {
-                ForEach(percentageData, id: \.label) { item in
-                    SectorMark(
-                        angle: .value("Value", item.value),
-                        innerRadius: .ratio(0.2),
-                        angularInset: 1.5
-                    )
-                    .cornerRadius(4)
-                    .foregroundStyle(by: .value("Category", item.label))
-                    .annotation(position: .overlay) {
-                        if item.value >= 5 { // Only show text for segments large enough
-                            Text("\(Int(round(item.value)))%")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                                .fontWeight(.bold)
+            },
+            content: {
+                Chart {
+                    ForEach(percentageData, id: \.label) { item in
+                        SectorMark(
+                            angle: .value("Value", item.value),
+                            innerRadius: .ratio(0.2),
+                            angularInset: 1.5
+                        )
+                        .cornerRadius(4)
+                        .foregroundStyle(by: .value("Category", item.label))
+                        .annotation(position: .overlay) {
+                            if item.value >= 5 {
+                                Text("\(Int(round(item.value)))%")
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                                    .fontWeight(.bold)
+                            }
                         }
                     }
                 }
+                .chartLegend(position: .bottom, alignment: .center, spacing: 20)
+                .frame(height: 200)
+            }, getRecommendation: {
+                await viewModel.getPaceDistributionRecommendation().detailedAdvice
             }
-            .chartLegend(position: .bottom, alignment: .center, spacing: 20)
-            .frame(height: 200)
-        }
+        )
     }
     
     var heatmapChart: some View {
@@ -464,45 +537,49 @@ struct DashboardView: View {
             onTap: {
                 viewModel.selectedChart = "Performance Change - Speed"
                 viewModel.showingDetail = true
-            }
-        ) {
-            Chart {
-                // Data rectangles
-                ForEach(viewModel.filteredElevationData()) { data in
-                    RectangleMark(
-                        x: .value("Distance", data.distance), // Ensure data.distance is compatible with the x-axis
-                        y: .value("Speed", data.value),
-                        width: .fixed(25),
-                        height: .fixed(25)
-                    )
-                    .foregroundStyle(viewModel.getHeatmapColor(for: data.value))
+            },
+            content: {
+                Chart {
+                    ForEach(viewModel.filteredElevationData()) { data in
+                        RectangleMark(
+                            x: .value("Distance", data.distance),
+                            y: .value("Speed", data.value),
+                            width: .fixed(25),
+                            height: .fixed(25)
+                        )
+                        .foregroundStyle(viewModel.getHeatmapColor(for: data.value))
+                    }
+                    
+                    let avgValue = viewModel.averageElevationValue()
+                    RuleMark(y: .value("Average", avgValue))
+                        .foregroundStyle(.red)
+                        .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
                 }
-                
-                // Average line (separated for clarity)
-                let avgValue = viewModel.averageElevationValue()
-                           RuleMark(y: .value("Average", avgValue))
-                               .foregroundStyle(.red)
-                               .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
-                
-            }
-            .chartYAxis {
-                AxisMarks(position: .leading)
-            }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: viewModel.getXAxisStride(), count: 5)) { value in
-                    if let distance = value.as(Double.self) {
+                .chartYAxis {
+                    AxisMarks(position: .leading)
+                }
+                .chartXAxis {
+                    AxisMarks { value in
                         AxisValueLabel {
-                            Text("\(distance, specifier: "%.1f") km") // Format distance
+                            if let distance = value.as(Double.self) {
+                                Text(String(format: "%.1f", distance))
+                            } else if let distance = value.as(Int.self) {
+                                Text("\(distance)")
+                            } else if let date = value.as(Date.self) {
+                                Text(date, format: .dateTime.day().month())
+                            }
                         }
                     }
+
                 }
+                .chartYAxisLabel("Elevation (m)")
+                .chartXAxisLabel("Distance (m)")
+                .chartLegend(position: .bottom)
+            }, getRecommendation: {
+                await viewModel.getElevationRecommendation().detailedAdvice
             }
-            // Simple legend instead of complex one
-            .chartLegend(position: .bottom)
-        }
+        )
     }
-
-
 }
 
 
